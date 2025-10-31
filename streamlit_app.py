@@ -5,8 +5,6 @@ import json
 import os
 import re
 from pathlib import Path
-import plotly.graph_objects as go
-import plotly.express as px
 from collections import defaultdict
 
 # Page configuration
@@ -603,7 +601,7 @@ def results_page():
         st.info("✅ Assessment complete! Thank you for participating.")
 
 # ============================================================================
-# INSTRUCTOR DASHBOARD
+# INSTRUCTOR DASHBOARD (Using Streamlit Built-in Charts)
 # ============================================================================
 
 def instructor_dashboard():
@@ -676,35 +674,30 @@ def instructor_dashboard():
     
     st.write("---")
     
-    # Score distribution chart
+    # Score distribution chart (Streamlit Bar Chart)
     st.subheader("📈 Score Distribution")
     
-    fig_histogram = go.Figure(data=[
-        go.Histogram(
-            x=scores,
-            nbinsx=10,
-            marker=dict(
-                color='rgba(102, 126, 234, 0.7)',
-                line=dict(color='rgba(102, 126, 234, 1.0)', width=1.5)
-            ),
-            name='Student Scores'
-        )
-    ])
+    score_bins = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    score_counts = [0] * 10
     
-    fig_histogram.add_hline(y=0, line_dash="dash", line_color="red", annotation_text="Passing Line (67%)")
-    fig_histogram.update_layout(
-        title="Distribution of Student Scores",
-        xaxis_title="Score Percentage (%)",
-        yaxis_title="Number of Students",
-        height=400,
-        showlegend=False
-    )
+    for score in scores:
+        for i, bin_val in enumerate(score_bins[:-1]):
+            if bin_val <= score < score_bins[i+1]:
+                score_counts[i] += 1
+                break
+        if score == 100:
+            score_counts[-1] += 1
     
-    st.plotly_chart(fig_histogram, use_container_width=True)
+    score_df = pd.DataFrame({
+        'Score Range': [f"{score_bins[i]}-{score_bins[i+1]-1}" for i in range(len(score_bins)-1)],
+        'Count': score_counts
+    })
+    
+    st.bar_chart(score_df.set_index('Score Range'))
     
     st.write("---")
     
-    # Topic-wise performance
+    # Topic-wise performance (Streamlit Bar Chart)
     st.subheader("📚 Topic-wise Performance")
     
     topic_data = []
@@ -713,30 +706,14 @@ def instructor_dashboard():
             percentage = (stats['correct'] / stats['total']) * 100
             topic_data.append({
                 'Topic': topic,
-                'Correct': stats['correct'],
-                'Total': stats['total'],
                 'Percentage': percentage
             })
     
-    topic_df = pd.DataFrame(topic_data)
-    
-    fig_topic = px.bar(
-        topic_df,
-        x='Topic',
-        y='Percentage',
-        color='Percentage',
-        color_continuous_scale='RdYlGn',
-        height=400,
-        title='Performance by Topic',
-        labels={'Percentage': 'Correct %'}
-    )
-    
-    fig_topic.update_layout(
-        xaxis_tickangle=-45,
-        showlegend=False
-    )
-    
-    st.plotly_chart(fig_topic, use_container_width=True)
+    if topic_data:
+        topic_df = pd.DataFrame(topic_data)
+        st.bar_chart(topic_df.set_index('Topic')['Percentage'])
+    else:
+        st.info("No topic data available yet")
     
     st.write("---")
     
@@ -750,23 +727,19 @@ def instructor_dashboard():
             percentage = (stats['correct'] / stats['total']) * 100
             difficulty_data.append({
                 'Difficulty': difficulty,
-                'Correct': stats['correct'],
-                'Total': stats['total'],
-                'Percentage': percentage
+                'Percentage': percentage,
+                'Count': stats['total']
             })
     
-    difficulty_df = pd.DataFrame(difficulty_data)
-    
-    fig_difficulty = px.pie(
-        difficulty_df,
-        values='Total',
-        names='Difficulty',
-        title='Questions Distribution by Difficulty',
-        height=400,
-        color_discrete_sequence=['#90EE90', '#FFD700', '#FF6B6B']
-    )
-    
-    st.plotly_chart(fig_difficulty, use_container_width=True)
+    if difficulty_data:
+        difficulty_df = pd.DataFrame(difficulty_data)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.bar_chart(difficulty_df.set_index('Difficulty')['Percentage'])
+        with col2:
+            st.bar_chart(difficulty_df.set_index('Difficulty')['Count'])
+    else:
+        st.info("No difficulty data available yet")
     
     st.write("---")
     
@@ -794,14 +767,15 @@ def instructor_dashboard():
         )
     
     with col2:
-        topic_csv = topic_df.to_csv(index=False)
-        st.download_button(
-            label="📥 Download Topic Analysis",
-            data=topic_csv,
-            file_name=f"topic_analysis_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
+        topic_csv = topic_df.to_csv(index=False) if topic_data else ""
+        if topic_csv:
+            st.download_button(
+                label="📥 Download Topic Analysis",
+                data=topic_csv,
+                file_name=f"topic_analysis_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
     
     with col3:
         if st.button("🔄 Refresh Data"):
