@@ -5,6 +5,9 @@ import json
 import os
 import re
 from pathlib import Path
+import plotly.graph_objects as go
+import plotly.express as px
+from collections import defaultdict
 
 # Page configuration
 st.set_page_config(
@@ -55,6 +58,13 @@ st.markdown("""
         border-radius: 8px;
         color: #721c24;
     }
+    .instructor-header {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        padding: 20px;
+        border-radius: 10px;
+        color: white;
+        margin-bottom: 20px;
+    }
     @media (max-width: 768px) {
         .header-container {
             padding: 10px;
@@ -67,7 +77,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state with proper defaults
+# Initialize session state
 def init_session_state():
     """Initialize all session state variables"""
     if 'page' not in st.session_state:
@@ -84,23 +94,12 @@ def init_session_state():
         st.session_state.student_phone = ""
     if 'start_time' not in st.session_state:
         st.session_state.start_time = datetime.now()
+    if 'instructor_mode' not in st.session_state:
+        st.session_state.instructor_mode = False
+    if 'instructor_password' not in st.session_state:
+        st.session_state.instructor_password = ""
 
 init_session_state()
-
-# Validation functions
-def validate_email(email):
-    """Validate email format"""
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return re.match(pattern, email) is not None
-
-def validate_phone(phone):
-    """Validate phone number (10 digits for India)"""
-    pattern = r'^[0-9]{10}$'
-    return re.match(pattern, phone) is not None
-
-def validate_name(name):
-    """Validate name (at least 3 characters)"""
-    return len(name.strip()) >= 3 and name.isalpha() or ' ' in name
 
 # MCQ Data (15 questions)
 mcq_data = {
@@ -286,6 +285,22 @@ mcq_data = {
     }
 }
 
+# Validation functions
+def validate_email(email):
+    """Validate email format"""
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
+
+def validate_phone(phone):
+    """Validate phone number (10 digits for India)"""
+    pattern = r'^[0-9]{10}$'
+    return re.match(pattern, phone) is not None
+
+def validate_name(name):
+    """Validate name (at least 3 characters)"""
+    return len(name.strip()) >= 3
+
+# File operations
 def save_response_cloud(email, responses, student_name, student_phone):
     """Save responses to cloud-compatible JSON"""
     try:
@@ -308,6 +323,21 @@ def save_response_cloud(email, responses, student_name, student_phone):
         st.error(f"❌ Error saving response: {str(e)}")
         return None
 
+def load_all_responses():
+    """Load all student responses from files"""
+    all_data = []
+    try:
+        for filename in os.listdir("responses"):
+            if filename.endswith(".json"):
+                filepath = os.path.join("responses", filename)
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    all_data.append(data)
+    except Exception as e:
+        st.error(f"Error loading responses: {str(e)}")
+    
+    return all_data
+
 def calculate_score(responses):
     """Calculate score and return details"""
     score = 0
@@ -322,8 +352,12 @@ def calculate_score(responses):
         
         return score, correct_answers
     except Exception as e:
-        st.error(f"❌ Error calculating score: {str(e)}")
+        st.error(f"Error calculating score: {str(e)}")
         return 0, {}
+
+# ============================================================================
+# PAGE FUNCTIONS
+# ============================================================================
 
 def login_page():
     """Login page for student information"""
@@ -365,11 +399,10 @@ def login_page():
         
         with col_submit:
             if st.button("▶️ Start Assessment", use_container_width=True):
-                # Validation
                 errors = []
                 
                 if not validate_name(name):
-                    errors.append("❌ Name must be at least 3 characters (letters and spaces only)")
+                    errors.append("❌ Name must be at least 3 characters")
                 
                 if not validate_email(email):
                     errors.append("❌ Invalid email format (e.g., student@example.com)")
@@ -431,7 +464,6 @@ def assessment_page():
     
     st.write("---")
     
-    # Progress tracking
     total_questions = len(mcq_data)
     answered_count = len([v for v in st.session_state.responses.values() if v])
     progress = answered_count / total_questions if total_questions > 0 else 0
@@ -461,7 +493,6 @@ def assessment_page():
     
     st.write("---")
     
-    # Submit button
     col1, col2, col3 = st.columns([1, 1, 1])
     
     with col2:
@@ -478,7 +509,6 @@ def results_page():
     total_questions = len(mcq_data)
     percentage = (score / total_questions) * 100 if total_questions > 0 else 0
     
-    # Save responses
     filename = save_response_cloud(
         st.session_state.student_email,
         st.session_state.responses,
@@ -495,7 +525,6 @@ def results_page():
     
     st.write("---")
     
-    # Score display
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -508,7 +537,6 @@ def results_page():
     
     st.write("---")
     
-    # Interpretation
     if score >= 13:
         st.markdown("""
             <div class="success-box">
@@ -533,7 +561,6 @@ def results_page():
     
     st.write("---")
     
-    # Detailed feedback
     st.subheader("📋 Detailed Answer Review")
     
     for q_num in sorted(mcq_data.keys()):
@@ -575,10 +602,286 @@ def results_page():
     with col2:
         st.info("✅ Assessment complete! Thank you for participating.")
 
-# Main app logic
+# ============================================================================
+# INSTRUCTOR DASHBOARD
+# ============================================================================
+
+def instructor_dashboard():
+    """Instructor analytics and monitoring dashboard"""
+    st.markdown("""
+        <div class="instructor-header">
+            <h1>👨‍🏫 Instructor Dashboard - Student Analytics</h1>
+            <p style='font-size: 16px;'>Real-time Assessment Performance Monitoring</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Load all responses
+    all_responses = load_all_responses()
+    
+    if not all_responses:
+        st.warning("⚠️ No student responses yet. Students will appear here once they submit their assessments.")
+        return
+    
+    # Calculate statistics
+    scores = []
+    topics_correct = defaultdict(lambda: {'correct': 0, 'total': 0})
+    difficulty_stats = defaultdict(lambda: {'correct': 0, 'total': 0})
+    student_details = []
+    
+    for response_data in all_responses:
+        responses = response_data.get('responses', {})
+        score, _ = calculate_score(responses)
+        percentage = (score / len(mcq_data)) * 100
+        scores.append(percentage)
+        
+        student_details.append({
+            'Name': response_data.get('name', 'N/A'),
+            'Email': response_data.get('email', 'N/A'),
+            'Phone': response_data.get('phone', 'N/A'),
+            'Score': f"{score}/{len(mcq_data)}",
+            'Percentage': f"{percentage:.1f}%",
+            'Status': 'PASSED ✅' if score >= 10 else 'FAILED ❌',
+            'Timestamp': response_data.get('timestamp', 'N/A')
+        })
+        
+        # Topic-wise analysis
+        for q_num, answer in responses.items():
+            q_num = int(q_num)
+            topic = mcq_data[q_num]['topic']
+            difficulty = mcq_data[q_num]['difficulty']
+            
+            topics_correct[topic]['total'] += 1
+            difficulty_stats[difficulty]['total'] += 1
+            
+            if answer == mcq_data[q_num]['correct']:
+                topics_correct[topic]['correct'] += 1
+                difficulty_stats[difficulty]['correct'] += 1
+    
+    # Display summary metrics
+    st.subheader("📊 Summary Statistics")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Students", len(all_responses))
+    with col2:
+        avg_score = sum(scores) / len(scores) if scores else 0
+        st.metric("Average Score", f"{avg_score:.1f}%")
+    with col3:
+        passed = len([s for s in scores if s >= 67])
+        st.metric("Passed", f"{passed}/{len(scores)}")
+    with col4:
+        highest = max(scores) if scores else 0
+        st.metric("Highest Score", f"{highest:.1f}%")
+    
+    st.write("---")
+    
+    # Score distribution chart
+    st.subheader("📈 Score Distribution")
+    
+    fig_histogram = go.Figure(data=[
+        go.Histogram(
+            x=scores,
+            nbinsx=10,
+            marker=dict(
+                color='rgba(102, 126, 234, 0.7)',
+                line=dict(color='rgba(102, 126, 234, 1.0)', width=1.5)
+            ),
+            name='Student Scores'
+        )
+    ])
+    
+    fig_histogram.add_hline(y=0, line_dash="dash", line_color="red", annotation_text="Passing Line (67%)")
+    fig_histogram.update_layout(
+        title="Distribution of Student Scores",
+        xaxis_title="Score Percentage (%)",
+        yaxis_title="Number of Students",
+        height=400,
+        showlegend=False
+    )
+    
+    st.plotly_chart(fig_histogram, use_container_width=True)
+    
+    st.write("---")
+    
+    # Topic-wise performance
+    st.subheader("📚 Topic-wise Performance")
+    
+    topic_data = []
+    for topic, stats in sorted(topics_correct.items()):
+        if stats['total'] > 0:
+            percentage = (stats['correct'] / stats['total']) * 100
+            topic_data.append({
+                'Topic': topic,
+                'Correct': stats['correct'],
+                'Total': stats['total'],
+                'Percentage': percentage
+            })
+    
+    topic_df = pd.DataFrame(topic_data)
+    
+    fig_topic = px.bar(
+        topic_df,
+        x='Topic',
+        y='Percentage',
+        color='Percentage',
+        color_continuous_scale='RdYlGn',
+        height=400,
+        title='Performance by Topic',
+        labels={'Percentage': 'Correct %'}
+    )
+    
+    fig_topic.update_layout(
+        xaxis_tickangle=-45,
+        showlegend=False
+    )
+    
+    st.plotly_chart(fig_topic, use_container_width=True)
+    
+    st.write("---")
+    
+    # Difficulty-wise performance
+    st.subheader("🎯 Performance by Difficulty")
+    
+    difficulty_data = []
+    for difficulty in ['Easy', 'Medium', 'Hard']:
+        stats = difficulty_stats.get(difficulty, {'correct': 0, 'total': 0})
+        if stats['total'] > 0:
+            percentage = (stats['correct'] / stats['total']) * 100
+            difficulty_data.append({
+                'Difficulty': difficulty,
+                'Correct': stats['correct'],
+                'Total': stats['total'],
+                'Percentage': percentage
+            })
+    
+    difficulty_df = pd.DataFrame(difficulty_data)
+    
+    fig_difficulty = px.pie(
+        difficulty_df,
+        values='Total',
+        names='Difficulty',
+        title='Questions Distribution by Difficulty',
+        height=400,
+        color_discrete_sequence=['#90EE90', '#FFD700', '#FF6B6B']
+    )
+    
+    st.plotly_chart(fig_difficulty, use_container_width=True)
+    
+    st.write("---")
+    
+    # Detailed student performance table
+    st.subheader("👥 Detailed Student Performance")
+    
+    student_df = pd.DataFrame(student_details)
+    st.dataframe(student_df, use_container_width=True, hide_index=True)
+    
+    st.write("---")
+    
+    # Export options
+    st.subheader("💾 Export Data")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        csv = student_df.to_csv(index=False)
+        st.download_button(
+            label="📥 Download CSV",
+            data=csv,
+            file_name=f"student_scores_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    
+    with col2:
+        topic_csv = topic_df.to_csv(index=False)
+        st.download_button(
+            label="📥 Download Topic Analysis",
+            data=topic_csv,
+            file_name=f"topic_analysis_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    
+    with col3:
+        if st.button("🔄 Refresh Data"):
+            st.rerun()
+
+def instructor_login():
+    """Instructor login page"""
+    st.markdown("""
+        <div class="instructor-header">
+            <h1>👨‍🏫 Instructor Portal</h1>
+            <p style='font-size: 16px;'>Access Student Analytics and Performance Data</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    st.write("---")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("🔐 Instructor Login")
+        
+        password = st.text_input(
+            "Enter Instructor Password:",
+            type="password",
+            placeholder="Enter password"
+        )
+        
+        if st.button("🔓 Login", use_container_width=True):
+            # Default password: "admin123" (Change this in production!)
+            if password == "admin123":
+                st.session_state.instructor_mode = True
+                st.session_state.page = 'instructor_dashboard'
+                st.rerun()
+            else:
+                st.error("❌ Incorrect password!")
+    
+    with col2:
+        st.info("""
+        **Default Instructor Login:**
+        
+        **Password:** `admin123`
+        
+        ⚠️ **Important:** Change this password in production!
+        
+        Edit line in code:
+        ```python
+        if password == "admin123":
+        ```
+        
+        Replace with your secure password.
+        """)
+
+# ============================================================================
+# MAIN APP LOGIC
+# ============================================================================
+
+# Sidebar navigation
+with st.sidebar:
+    st.title("🎓 Navigation")
+    
+    page_options = ["Student Assessment", "Instructor Portal"]
+    selected_option = st.radio("Select Mode:", page_options)
+    
+    if selected_option == "Student Assessment":
+        st.session_state.instructor_mode = False
+        st.session_state.page = 'login'
+    elif selected_option == "Instructor Portal":
+        st.session_state.page = 'instructor_login'
+    
+    st.write("---")
+    st.info("ℹ️ Select your mode to proceed")
+
+# Route to appropriate page
 if st.session_state.page == 'login':
     login_page()
 elif st.session_state.page == 'assessment':
     assessment_page()
 elif st.session_state.page == 'results':
     results_page()
+elif st.session_state.page == 'instructor_login':
+    instructor_login()
+elif st.session_state.page == 'instructor_dashboard' or st.session_state.instructor_mode:
+    instructor_dashboard()
