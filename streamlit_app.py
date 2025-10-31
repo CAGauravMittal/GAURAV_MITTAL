@@ -805,7 +805,7 @@ def instructor_login():
         
         if st.button("🔓 Login", use_container_width=True):
             # Default password: "admin123" (Change this in production!)
-            if password == "admin123":
+            if password == "gaurav123":
                 st.session_state.instructor_mode = True
                 st.session_state.page = 'instructor_dashboard'
                 st.rerun()
