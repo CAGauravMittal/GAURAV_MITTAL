@@ -1,68 +1,3 @@
-# Streamlit App - Error Analysis & Diagnosis
-## Login Issue Identification
-
----
-
-## 🔴 IDENTIFIED ERRORS
-
-### **Error 1: Sidebar Navigation Logic Flaw**
-**Problem:** The sidebar radio button changes `st.session_state.page`, but then the main conditional logic checks for a different page value.
-
-**Line causing issue:**
-```python
-if selected_option == "Student Assessment":
-    st.session_state.page = 'login'
-elif selected_option == "Instructor Portal":
-    st.session_state.page = 'instructor_login'
-```
-
-Then at end:
-```python
-if st.session_state.page == 'login':
-    login_page()
-```
-
-**Result:** Infinite loop - page gets set after the sidebar but the conditional logic hasn't been executed yet in that render cycle.
-
----
-
-### **Error 2: Session State Race Condition**
-**Problem:** When user clicks sidebar option, it sets state but re-runs before the conditional routing logic executes.
-
-**Result:** User lands on wrong page or blank page.
-
----
-
-### **Error 3: Missing Page Route for Initial Load**
-**Problem:** When app first loads, `st.session_state.page` might be 'login', but if sidebar is updated first, it creates a conflict.
-
-**Result:** Login page doesn't render properly.
-
----
-
-### **Error 4: Instructor Mode Not Properly Initialized**
-**Problem:** `st.session_state.instructor_mode` is never set to True when instructor tries to login, so the dashboard routing logic fails.
-
-**Line issue:**
-```python
-elif st.session_state.page == 'instructor_dashboard' or st.session_state.instructor_mode:
-    instructor_dashboard()
-```
-
-The `instructor_mode` flag is never actually set to True because the rerun happens before assignment completes.
-
----
-
-### **Error 5: No Clear Navigation Flow**
-**Problem:** Sidebar appears on every page, constantly resetting the state, causing navigation confusion.
-
-**Result:** Students can't move through assessment without sidebar interfering.
-
----
-
-## ✅ FIXED CODE - Complete Solution
-
-```python
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -72,23 +7,14 @@ import re
 from pathlib import Path
 from collections import defaultdict
 
-# ============================================================================
-# PAGE CONFIGURATION
-# ============================================================================
-
 st.set_page_config(
     page_title="CA AI Training - Day 1 Assessment",
     page_icon="📋",
     layout="wide",
-    initial_sidebar_state="collapsed"  # Start collapsed to avoid sidebar issues
+    initial_sidebar_state="collapsed"
 )
 
-# Create responses directory
 Path("responses").mkdir(exist_ok=True)
-
-# ============================================================================
-# CUSTOM CSS
-# ============================================================================
 
 st.markdown("""
     <style>
@@ -113,13 +39,6 @@ st.markdown("""
         border-radius: 8px;
         color: #155724;
     }
-    .warning-box {
-        background-color: #fff3cd;
-        border: 1px solid #ffeeba;
-        padding: 15px;
-        border-radius: 8px;
-        color: #856404;
-    }
     .error-box {
         background-color: #f8d7da;
         border: 1px solid #f5c6cb;
@@ -134,26 +53,12 @@ st.markdown("""
         color: white;
         margin-bottom: 20px;
     }
-    @media (max-width: 768px) {
-        .header-container {
-            padding: 10px;
-        }
-        .question-box {
-            padding: 10px;
-            margin: 10px 0;
-        }
-    }
     </style>
 """, unsafe_allow_html=True)
 
-# ============================================================================
-# SESSION STATE INITIALIZATION
-# ============================================================================
-
 def init_session_state():
-    """Initialize all session state variables"""
     defaults = {
-        'page': 'home',  # Changed: start with 'home' page
+        'page': 'home',
         'responses': {},
         'student_name': "",
         'student_email': "",
@@ -166,10 +71,6 @@ def init_session_state():
             st.session_state[key] = value
 
 init_session_state()
-
-# ============================================================================
-# MCQ DATA
-# ============================================================================
 
 mcq_data = {
     1: {
@@ -199,10 +100,10 @@ mcq_data = {
     3: {
         'question': "Prompt Engineering - Expense Audit\n\nYou're auditing a consulting firm's expenses. You want AI to analyze 300 employee expense reports for policy violations. Which prompt would be MOST EFFECTIVE for this scenario?",
         'options': {
-            'a': "\"Check if expenses are valid\"",
-            'b': "\"You are internal audit partner. Review attached 300 expense reports against this policy:\n- Flight: Only first class for flights >4 hours (max ₹1,20,000/ticket)\n- Hotel: Max ₹12,000/night, 3-star or below\n- Meals: ₹800/day per diem, or receipt reimbursement\n- Entertainment: Client entertainment ₹5,000/person max\n\nFlag: (1) Policy violations (2) Borderline cases (3) Risk indicators.\nFormat: Excel-ready table with columns: Employee, Amount, Policy, Violation Type, Recommended Action, Manager\"",
-            'c': "\"Analyze expenses and tell me if anything is wrong\"",
-            'd': "\"Use machine learning to predict which employees will submit fraudulent expenses\""
+            'a': "Check if expenses are valid",
+            'b': "You are internal audit partner. Review attached 300 expense reports against this policy - Flight: Only first class for flights >4 hours (max 120000 rupees per ticket) - Hotel: Max 12000 rupees per night, 3-star or below - Meals: 800 rupees per day per diem, or receipt reimbursement - Entertainment: Client entertainment 5000 rupees per person max. Flag: (1) Policy violations (2) Borderline cases (3) Risk indicators. Format: Excel-ready table with columns: Employee, Amount, Policy, Violation Type, Recommended Action, Manager",
+            'c': "Analyze expenses and tell me if anything is wrong",
+            'd': "Use machine learning to predict which employees will submit fraudulent expenses"
         },
         'correct': 'b',
         'topic': 'Prompt Engineering',
@@ -212,8 +113,8 @@ mcq_data = {
         'question': "Reinforcement Learning - Tally Integration\n\nYour firm has Tally Prime with ODBC enabled. You want to build a system that learns to automatically flag suspicious journal entries. How would reinforcement learning help in this scenario?",
         'options': {
             'a': "Show the system 100 examples of legitimate journal entries and it will reject all others",
-            'b': "The system flags all unusual entries, gets feedback monthly from partner (\"This was fraud\" or \"This was legitimate\"), adjusts thresholds quarterly to improve accuracy",
-            'c': "Use past audit findings only; no need for ongoing learning",
+            'b': "The system flags all unusual entries, gets feedback monthly from partner about fraudulent or legitimate items, adjusts thresholds quarterly to improve accuracy",
+            'c': "Use past audit findings only without ongoing learning",
             'd': "This is supervised learning, not reinforcement learning"
         },
         'correct': 'b',
@@ -221,7 +122,7 @@ mcq_data = {
         'difficulty': 'Hard'
     },
     5: {
-        'question': "Bias in AI - Audit Risk Assessment\n\nAn AI audit tool, trained on 10 years of firm's audit data, consistently flags \"transactions >₹20 lakhs from certain vendors as high-risk\" while flagging \"transactions >₹50 lakhs from established vendors as low-risk.\" What is the PRIMARY concern?",
+        'question': "Bias in AI - Audit Risk Assessment\n\nAn AI audit tool, trained on 10 years of firm's audit data, consistently flags transactions >20 lakhs from certain vendors as high-risk while flagging transactions >50 lakhs from established vendors as low-risk. What is the PRIMARY concern?",
         'options': {
             'a': "The AI is correctly identifying vendor patterns based on historical data",
             'b': "The AI has learned bias: it underweights materiality for familiar vendors and overweights it for newer vendors - this could miss significant issues",
@@ -233,7 +134,7 @@ mcq_data = {
         'difficulty': 'Hard'
     },
     6: {
-        'question': "Month-End Close Automation\n\nA CFO of ₹500 cr revenue manufacturing company has this month-end close process:\n- Tally exports (manual): 20 min\n- Variance analysis: 40 min\n- Expense accruals: 30 min\n- Manual commenting: 30 min\nTotal: 120 min/month\n\nUsing Tally ODBC + Power BI + ChatGPT API integration, after 2-day setup, what is REALISTIC outcome by month 2?",
+        'question': "Month-End Close Automation\n\nA CFO of 500 crore revenue manufacturing company has this month-end close process: Tally exports (manual) 20 min, Variance analysis 40 min, Expense accruals 30 min, Manual commenting 30 min. Total 120 min per month. Using Tally ODBC + Power BI + ChatGPT API integration, after 2-day setup, what is REALISTIC outcome by month 2?",
         'options': {
             'a': "120 → 30 min (75% reduction) - still needs quality review and judgment",
             'b': "120 → 10 min (92% reduction) - fully automated, no review needed",
@@ -245,10 +146,10 @@ mcq_data = {
         'difficulty': 'Medium'
     },
     7: {
-        'question': "Expense Reconciliation - Compliance Issue\n\nA startup's expense data shows:\n- Employee Rakesh submitted 5 hotel bills from \"Hotel Paradise\" at exactly ₹12,000/night for 20 consecutive days\n- Policy allows ₹12,000/night max\n- All within policy technically\n- But statistically, staying in same 3-star hotel for 20 days at EXACTLY policy limit is highly unusual\n\nWhat should an AI auditing tool flag here?",
+        'question': "Expense Reconciliation - Compliance Issue\n\nA startup's expense data shows: Employee Rakesh submitted 5 hotel bills from Hotel Paradise at exactly 12000 rupees per night for 20 consecutive days. Policy allows 12000 rupees per night max. All within policy technically. But statistically, staying in same 3-star hotel for 20 days at EXACTLY policy limit is highly unusual. What should an AI auditing tool flag here?",
         'options': {
             'a': "No issue - all within policy limits",
-            'b': "\"SUSPICIOUS PATTERN: Consistent exact-limit compliance across 20 days suggests potential fabrication of expenses. Recommend: (1) Verify hotel receipts and stay dates (2) Check travel project dates (3) Review employee's travel pattern\"",
+            'b': "SUSPICIOUS PATTERN: Consistent exact-limit compliance across 20 days suggests potential fabrication of expenses. Recommend: (1) Verify hotel receipts and stay dates (2) Check travel project dates (3) Review employee's travel pattern",
             'c': "Approve all 20 days - employee is budget-conscious",
             'd': "Flag only if even ONE day exceeds policy"
         },
@@ -257,7 +158,7 @@ mcq_data = {
         'difficulty': 'Medium'
     },
     8: {
-        'question': "AI for Month-End Accruals\n\nA ₹200 cr IT services company has complex accruals: employee bonuses (variable), warranty provisions (estimated), project revenue adjustments (percentage complete method). CFO currently spends 6 hours monthly calculating these accruals.\n\nUsing Tally database + ODBC connection to AI (ChatGPT with Excel), what is MOST feasible for automation?",
+        'question': "AI for Month-End Accruals\n\nA 200 crore IT services company has complex accruals: employee bonuses (variable), warranty provisions (estimated), project revenue adjustments (percentage complete method). CFO currently spends 6 hours monthly calculating these accruals. Using Tally database + ODBC connection to AI (ChatGPT with Excel), what is MOST feasible for automation?",
         'options': {
             'a': "100% automation - AI calculates all accruals without human review",
             'b': "70-80% automation - AI extracts data, calculates, suggests accruals; CFO reviews/approves in 1.5 hours",
@@ -269,23 +170,23 @@ mcq_data = {
         'difficulty': 'Hard'
     },
     9: {
-        'question': "Anomaly in Financial Data\n\nAudit of Fintech startup \"PayQuick Ltd\" (FY 2024-25):\n- Monthly revenue Oct-Dec 2024: ₹8cr, ₹8.5cr, ₹9cr (steady)\n- January 2025: ₹22cr (145% jump)\n- Feb-Mar 2025: ₹9.5cr, ₹10cr (back to normal)\n\nCompany claims \"January was product launch month in new market (Singapore)\". Management has provided:\n- ₹22cr revenue from 3 Singapore customers\n- Singapore customer PAN numbers (seems odd for foreign customers)\n- No documentation of market research, customer negotiations, or product adaptation costs\n\nAs auditor using AI for anomaly detection, what is your NEXT step?",
+        'question': "Anomaly in Financial Data\n\nAudit of Fintech startup PayQuick Ltd (FY 2024-25): Monthly revenue Oct-Dec 2024: 8cr, 8.5cr, 9cr (steady). January 2025: 22cr (145% jump). Feb-Mar 2025: 9.5cr, 10cr (back to normal). Company claims January was product launch month in new market (Singapore). Management provided: 22cr revenue from 3 Singapore customers. Singapore customer PAN numbers (seems odd for foreign customers). No documentation of market research or product adaptation costs. As auditor using AI for anomaly detection, what is your NEXT step?",
         'options': {
             'a': "Accept explanation - this is normal in fintech startup; approve revenue",
-            'b': "Flag for investigation: \"Large one-time revenue from new market; verify: (1) Customer legitimacy (are these real entities or related parties?) (2) Performance obligations (what was delivered?) (3) Collection (has payment been received?) (4) Why no repeat in Feb?\"",
-            'c': "Reject revenue - startups can't have such large deals",
-            'd': "This isn't an audit issue; focus on other areas"
+            'b': "Flag for investigation: Large one-time revenue from new market; verify: (1) Customer legitimacy (2) Performance obligations (3) Collection (4) Why no repeat in Feb",
+            'c': "Reject revenue - startups cannot have such large deals",
+            'd': "This is not an audit issue; focus on other areas"
         },
         'correct': 'b',
         'topic': 'Revenue Anomaly',
         'difficulty': 'Hard'
     },
     10: {
-        'question': "GST Compliance Automation\n\nYour firm audits a ₹150cr distributor with operations in Maharashtra, Gujarat, Tamil Nadu, Delhi. GST compliance check currently takes 40 hours/month (GSTR-1 vs GSTR-2B vs sales register reconciliation).\n\nUsing Power BI + Tally ODBC + ChatGPT for GST analysis, what's the expected timeline for implementation?",
+        'question': "GST Compliance Automation\n\nYour firm audits a 150cr distributor with operations in Maharashtra, Gujarat, Tamil Nadu, Delhi. GST compliance check currently takes 40 hours per month. Using Power BI + Tally ODBC + ChatGPT for GST analysis, what is the expected timeline for implementation?",
         'options': {
-            'a': "Week 1: Connect Tally ODBC to Power BI; Week 2: Build GST reconciliation dashboard; Week 3: AI prompts for compliance analysis\nResult: 40 hours → 8-10 hours/month (75% reduction)",
-            'b': "Week 1-2: Build automated reconciliation; Week 3: Train team\nResult: 40 hours → 15-20 hours/month (60% reduction) for first month",
-            'c': "Day 1: Connect; Day 2-7: Testing; Week 2: Go-live\nResult: 40 hours → 2-3 hours/month (95% reduction)",
+            'a': "Week 1: Connect Tally ODBC to Power BI; Week 2: Build GST reconciliation dashboard; Week 3: AI prompts. Result: 40 hours → 8-10 hours per month (75% reduction)",
+            'b': "Week 1-2: Build automated reconciliation; Week 3: Train team. Result: 40 hours → 15-20 hours per month (60% reduction)",
+            'c': "Day 1: Connect; Day 2-7: Testing; Week 2: Go-live. Result: 40 hours → 2-3 hours per month (95% reduction)",
             'd': "Too complex; manual process more reliable"
         },
         'correct': 'a',
@@ -293,22 +194,22 @@ mcq_data = {
         'difficulty': 'Hard'
     },
     11: {
-        'question': "Transfer Pricing in Digital Economy\n\nYour client \"CloudServe India\" (IT services) has this structure:\n- India entity: Develops software (costs ₹50 lakhs)\n- US entity (Delaware corp): Sells to US customers as SaaS (charges $10,000/month × 50 customers = ₹40+ crore annual revenue)\n- TP arrangement: India charges US entity ₹50 lakhs annually for development + support\n\nIncome Tax Department challenges this TP (says underpriced). What should AI-assisted TP analysis focus on?",
+        'question': "Transfer Pricing in Digital Economy\n\nYour client CloudServe India (IT services) has this structure: India entity develops software (costs 50 lakhs). US entity (Delaware corp) sells to US customers as SaaS (charges 10000 dollars per month for 50 customers = 40+ crore annual revenue). TP arrangement: India charges US entity 50 lakhs annually for development. Income Tax Department challenges this TP (says underpriced). What should AI-assisted TP analysis focus on?",
         'options': {
             'a': "Accept current TP; no need to adjust",
-            'b': "Analyze: (1) What do comparable IT companies charge for similar SaaS development? (Benchmarking) (2) What % of US revenue should India entity receive for its contribution? (Economic analysis) (3) What functions does India entity perform vs US entity? (FAR analysis) (4) Is TP defensible under Indian TP rules?",
-            'c': "Just increase India's charge to ₹2 crore to be safe",
-            'd': "Don't engage with IT Dept; dispute everything"
+            'b': "Analyze: (1) What do comparable IT companies charge for similar SaaS development (2) What percentage of US revenue should India entity receive (3) What functions does India entity perform vs US entity (4) Is TP defensible under Indian TP rules",
+            'c': "Just increase India's charge to 2 crore to be safe",
+            'd': "Do not engage with IT Department; dispute everything"
         },
         'correct': 'b',
         'topic': 'Transfer Pricing',
         'difficulty': 'Hard'
     },
     12: {
-        'question': "Going Concern Assessment\n\nManufacturing company \"SteelTech Ltd\" audit:\n- Revenue FY24: ₹200cr; FY25: ₹180cr (declining)\n- Net loss FY25: ₹20cr (vs ₹15cr profit prior year)\n- Bank balance: ₹5cr (down from ₹50cr)\n- Debt due in 12 months: ₹80cr\n- Current ratio: 0.4\n\nBUT: Management has obtained:\n- Letter of credit from Development Bank for ₹60cr (to refinance debt)\n- New order from Govt of India for ₹150cr (contract signed, 2-year delivery)\n\nWhat is the CORRECT audit opinion approach?",
+        'question': "Going Concern Assessment\n\nManufacturing company SteelTech Ltd audit: Revenue FY24: 200cr; FY25: 180cr (declining). Net loss FY25: 20cr (vs 15cr profit prior year). Bank balance: 5cr (down from 50cr). Debt due in 12 months: 80cr. Current ratio: 0.4. BUT: Management obtained Letter of credit from Development Bank for 60cr to refinance debt. New order from Govt of India for 150cr (contract signed, 2-year delivery). What is the CORRECT audit opinion approach?",
         'options': {
             'a': "Adverse opinion - company clearly insolvent",
-            'b': "Unqualified opinion with Emphasis of Matter paragraph: \"Going concern depends on loan refinancing and Govt contract execution. These are contingencies with execution risk. Management has disclosed this. Auditor satisfied with disclosure.\"",
+            'b': "Unqualified opinion with Emphasis of Matter paragraph stating that going concern depends on loan refinancing and Govt contract execution",
             'c': "Qualified opinion - too much uncertainty",
             'd': "No going concern issue - Govt orders are guaranteed"
         },
@@ -317,10 +218,10 @@ mcq_data = {
         'difficulty': 'Hard'
     },
     13: {
-        'question': "Bank Reconciliation - Automation with ODBC\n\nYour firm uses Tally + Power BI ODBC automation for monthly bank reconciliation of 3 bank accounts (company has ₹500cr+ cash).\n\nAutomated system flags:\n- ₹50 lakhs: Bank transfer from unknown entity dated 30th Sept, marked as \"investment income\" but not requested by company\n- Settlement clearing in bank statement for transaction posted in Tally but dated 3 months ago\n\nWhat is CORRECT audit action?",
+        'question': "Bank Reconciliation - Automation with ODBC\n\nYour firm uses Tally + Power BI ODBC automation for monthly bank reconciliation of 3 bank accounts (company has 500cr+ cash). Automated system flags: 50 lakhs bank transfer from unknown entity dated 30th Sept, marked as investment income but not requested by company. Settlement clearing in bank statement for transaction posted in Tally but dated 3 months ago. What is CORRECT audit action?",
         'options': {
             'a': "Ignore - reconciliation matches; no further testing needed",
-            'b': "Investigate BOTH: (1) Is ₹50 lakh receipt legitimate or fraudulent? (2) Why 3-month delay in settlement? Could indicate backdated transaction or manipulation. Require management explanation + supporting documentation.",
+            'b': "Investigate BOTH: (1) Is 50 lakh receipt legitimate or fraudulent (2) Why 3-month delay in settlement - could indicate backdated transaction or manipulation",
             'c': "Approve reconciliation - computer says it matches",
             'd': "These are timing differences; routine"
         },
@@ -329,10 +230,10 @@ mcq_data = {
         'difficulty': 'Hard'
     },
     14: {
-        'question': "Data Security Breach Scenario\n\nYou're using ChatGPT to analyze a client's expense dataset for variance analysis. You paste the following:\n\n\"Employees with highest expenses: Rajesh (CEO) ₹45,00,000 (includes 10 international trips, 5-star hotels, first-class flights), Priya (CFO) ₹22,00,000, Amit (CTO) ₹18,00,000. Total 50 employees, total spend ₹3,50,00,000...\"\n\nWhat is the PROFESSIONAL ERROR here?",
+        'question': "Data Security Breach Scenario\n\nYou are using ChatGPT to analyze a client's expense dataset for variance analysis. You paste the following: Employees with highest expenses: Rajesh (CEO) 45 lakhs, Priya (CFO) 22 lakhs, Amit (CTO) 18 lakhs. Total 50 employees, total spend 3.5 crores. What is the PROFESSIONAL ERROR here?",
         'options': {
             'a': "None - this is aggregate data",
-            'b': "You've identified specific individuals (Rajesh, Priya, Amit) by name, function, and amounts. This is CONFIDENTIAL client information. Even ChatGPT's free version may use inputs for training. BREACH.",
+            'b': "You have identified specific individuals by name, function, and amounts. This is CONFIDENTIAL client information. ChatGPT may use inputs for training. BREACH.",
             'c': "Using ChatGPT for any client analysis is fine; this is normal practice",
             'd': "Only problem if you pasted the ENTIRE report, not summary"
         },
@@ -341,12 +242,12 @@ mcq_data = {
         'difficulty': 'Medium'
     },
     15: {
-        'question': "AI Hallucination - Tax Scenario\n\nA client asks you: \"Can we claim 100% deduction for consulting fees paid to Group's Singapore entity under Section 37(1)?\"\n\nUsing ChatGPT, you get response: \"Yes, Section 37(1) allows 100% deduction for ordinary and necessary business expenses, including consulting fees to related entities. Singapore entity should issue invoice.\"\n\nBefore advising the client, you verify this with:\n- Current Income Tax Act Section 37(1) [actual rule]\n- Section 40A (Transfer Pricing compliance required for related party payments)\n- Section 92 (Actual TP study required for payments >₹5 cr)\n\nWhat do you discover?",
+        'question': "AI Hallucination - Tax Scenario\n\nA client asks: Can we claim 100% deduction for consulting fees paid to Group's Singapore entity under Section 37(1)? ChatGPT responds: Yes, Section 37(1) allows 100% deduction for ordinary and necessary business expenses, including consulting fees to related entities. Before advising the client, you verify this against current Income Tax Act. What do you discover?",
         'options': {
             'a': "ChatGPT was correct - 100% deduction allowed",
-            'b': "ChatGPT hallucinated: While Section 37(1) allows deduction, it requires:\n   - Invoice on proper letterhead with tax ID\n   - Transfer pricing documentation (Section 92)\n   - TP study proving it's arm's length rate\n   - NO automatic 100% deduction without these",
-            'c': "Deduction is denied - can't pay related parties",
-            'd': "This is too complex for AI; don't use AI for tax"
+            'b': "ChatGPT hallucinated: While Section 37(1) allows deduction, it requires: Invoice on proper letterhead with tax ID, Transfer pricing documentation (Section 92), TP study proving arm's length rate",
+            'c': "Deduction is denied - cannot pay related parties",
+            'd': "This is too complex for AI; do not use AI for tax"
         },
         'correct': 'b',
         'topic': 'AI Hallucination',
@@ -354,30 +255,18 @@ mcq_data = {
     }
 }
 
-# ============================================================================
-# VALIDATION FUNCTIONS
-# ============================================================================
-
 def validate_email(email):
-    """Validate email format"""
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return re.match(pattern, email) is not None
 
 def validate_phone(phone):
-    """Validate phone number (10 digits for India)"""
     pattern = r'^[0-9]{10}$'
     return re.match(pattern, phone) is not None
 
 def validate_name(name):
-    """Validate name (at least 3 characters)"""
     return len(name.strip()) >= 3
 
-# ============================================================================
-# FILE OPERATIONS
-# ============================================================================
-
 def save_response(email, responses, student_name, student_phone):
-    """Save responses to JSON file"""
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"responses/responses_{email}_{timestamp}.json"
@@ -395,11 +284,10 @@ def save_response(email, responses, student_name, student_phone):
         
         return filename
     except Exception as e:
-        st.error(f"❌ Error saving response: {str(e)}")
+        st.error(f"Error saving response: {str(e)}")
         return None
 
 def load_all_responses():
-    """Load all student responses"""
     all_data = []
     try:
         if os.path.exists("responses"):
@@ -415,7 +303,6 @@ def load_all_responses():
     return all_data
 
 def calculate_score(responses):
-    """Calculate score"""
     score = 0
     correct_answers = {}
     
@@ -431,12 +318,7 @@ def calculate_score(responses):
         st.error(f"Error calculating score: {str(e)}")
         return 0, {}
 
-# ============================================================================
-# PAGE: HOME
-# ============================================================================
-
 def home_page():
-    """Home page with navigation options"""
     st.markdown("""
         <div class="header-container">
             <h1>📋 CA AI Training - Day 1 Assessment</h1>
@@ -462,12 +344,7 @@ def home_page():
             st.session_state.page = 'instructor_login'
             st.rerun()
 
-# ============================================================================
-# PAGE: STUDENT LOGIN
-# ============================================================================
-
 def student_login_page():
-    """Student login and info collection"""
     st.markdown("""
         <div class="header-container">
             <h1>📋 CA AI Training - Day 1 Assessment</h1>
@@ -495,11 +372,11 @@ def student_login_page():
                 errors = []
                 
                 if not validate_name(name):
-                    errors.append("❌ Name must be at least 3 characters")
+                    errors.append("Name must be at least 3 characters")
                 if not validate_email(email):
-                    errors.append("❌ Invalid email format")
+                    errors.append("Invalid email format")
                 if not validate_phone(phone):
-                    errors.append("❌ Phone must be 10 digits")
+                    errors.append("Phone must be 10 digits")
                 
                 if errors:
                     for error in errors:
@@ -512,26 +389,24 @@ def student_login_page():
                     st.rerun()
         
         with col_back:
-            if st.button("⬅️ Back", use_container_width=True):
+            if st.button("Back", use_container_width=True):
                 st.session_state.page = 'home'
                 st.rerun()
     
     with col2:
-        st.subheader("📚 Assessment Details")
+        st.subheader("Assessment Details")
         st.markdown("""
-        **Format:** Multiple Choice (MCQ)
+        Format: Multiple Choice (MCQ)
         
-        **Total Questions:** 15
+        Total Questions: 15
         
-        **Time:** 30 minutes
+        Time: 30 minutes
         
-        **Score:** 1 point per correct answer
+        Score: 1 point per correct answer
         
-        **Pass Mark:** 10 points (67%)
+        Pass Mark: 10 points (67%)
         
-        ---
-        
-        **Topics:**
+        Topics Covered:
         - AI Concepts
         - Machine Learning
         - Prompt Engineering
@@ -540,12 +415,7 @@ def student_login_page():
         - Ethical AI Use
         """)
 
-# ============================================================================
-# PAGE: ASSESSMENT
-# ============================================================================
-
 def assessment_page():
-    """Assessment page with all 15 questions"""
     st.markdown(f"""
         <div class="header-container">
             <h1>📋 CA AI Training - Day 1 Assessment</h1>
@@ -555,7 +425,6 @@ def assessment_page():
     
     st.write("---")
     
-    # Progress
     total_q = len(mcq_data)
     answered = len([v for v in st.session_state.responses.values() if v])
     progress = answered / total_q if total_q > 0 else 0
@@ -568,7 +437,6 @@ def assessment_page():
     
     st.write("---")
     
-    # Display questions
     for q_num, q_data in mcq_data.items():
         with st.expander(f"Q{q_num}: {q_data['topic']} [{q_data['difficulty']}]"):
             st.write(q_data['question'])
@@ -588,24 +456,18 @@ def assessment_page():
     col1, col2, col3 = st.columns([1, 1, 1])
     
     with col2:
-        if st.button("✅ Submit Assessment", use_container_width=True):
+        if st.button("Submit Assessment", use_container_width=True):
             if len(st.session_state.responses) == total_q:
                 st.session_state.page = 'results'
                 st.rerun()
             else:
-                st.error(f"❌ Please answer all {total_q} questions")
-
-# ============================================================================
-# PAGE: RESULTS
-# ============================================================================
+                st.error(f"Please answer all {total_q} questions")
 
 def results_page():
-    """Results and feedback page"""
     score, correct_answers = calculate_score(st.session_state.responses)
     total_q = len(mcq_data)
     percentage = (score / total_q) * 100 if total_q > 0 else 0
     
-    # Save response
     filename = save_response(
         st.session_state.student_email,
         st.session_state.responses,
@@ -628,7 +490,7 @@ def results_page():
     with col2:
         st.metric("Percentage", f"{percentage:.1f}%")
     with col3:
-        status = "✅ PASSED" if score >= 10 else "❌ FAILED"
+        status = "PASSED" if score >= 10 else "FAILED"
         st.metric("Status", status)
     
     st.write("---")
@@ -636,28 +498,28 @@ def results_page():
     if score >= 13:
         st.markdown("""
             <div class="success-box">
-            <h3>🎉 Excellent!</h3>
-            <p>You've demonstrated excellent understanding of AI concepts. Ready for advanced applications!</p>
+            <h3>Excellent Performance!</h3>
+            <p>You have demonstrated excellent understanding of AI concepts. Ready for advanced applications!</p>
             </div>
         """, unsafe_allow_html=True)
     elif score >= 10:
         st.markdown("""
             <div class="success-box">
-            <h3>✅ Passed!</h3>
-            <p>You've met the competency level. Review incorrect answers before applying to practice.</p>
+            <h3>Passed!</h3>
+            <p>You have met the competency level. Review incorrect answers before applying to practice.</p>
             </div>
         """, unsafe_allow_html=True)
     else:
         st.markdown("""
             <div class="error-box">
-            <h3>⚠️ Below Passing</h3>
+            <h3>Below Passing</h3>
             <p>Review the material and try again. Foundation in AI concepts is essential.</p>
             </div>
         """, unsafe_allow_html=True)
     
     st.write("---")
     
-    st.subheader("📋 Answer Review")
+    st.subheader("Answer Review")
     
     for q_num in sorted(mcq_data.keys()):
         your = st.session_state.responses.get(str(q_num), 'N/A')
@@ -669,14 +531,14 @@ def results_page():
         <h4>Q{q_num}: {mcq_data[q_num]['topic']}</h4>
         <p><b>Your:</b> {your.upper()}) {mcq_data[q_num]['options'].get(your, 'N/A')}</p>
         <p><b>Correct:</b> {correct.upper()}) {mcq_data[q_num]['options'][correct]}</p>
-        <p>{'✅ Correct' if is_correct else '❌ Incorrect'}</p>
+        <p>{'Correct' if is_correct else 'Incorrect'}</p>
         </div>
         """
         st.markdown(box, unsafe_allow_html=True)
     
     st.write("---")
     
-    if st.button("🔄 Retake Assessment"):
+    if st.button("Retake Assessment"):
         st.session_state.responses = {}
         st.session_state.student_name = ""
         st.session_state.student_email = ""
@@ -684,15 +546,10 @@ def results_page():
         st.session_state.page = 'home'
         st.rerun()
 
-# ============================================================================
-# PAGE: INSTRUCTOR LOGIN
-# ============================================================================
-
 def instructor_login_page():
-    """Instructor authentication"""
     st.markdown("""
         <div class="instructor-header">
-            <h1>👨‍🏫 Instructor Portal</h1>
+            <h1>Instructor Portal</h1>
             <p>Access Student Analytics</p>
         </div>
     """, unsafe_allow_html=True)
@@ -702,53 +559,43 @@ def instructor_login_page():
     col1, col2 = st.columns([1, 2])
     
     with col1:
-        st.subheader("🔐 Login")
+        st.subheader("Login")
         
         password = st.text_input("Password:", type="password", placeholder="Enter password")
         
         col_login, col_back = st.columns(2)
         
         with col_login:
-            if st.button("🔓 Login", use_container_width=True):
+            if st.button("Login", use_container_width=True):
                 if password == "admin123":
                     st.session_state.instructor_authenticated = True
                     st.session_state.page = 'dashboard'
                     st.rerun()
                 else:
-                    st.error("❌ Invalid password!")
+                    st.error("Invalid password!")
         
         with col_back:
-            if st.button("⬅️ Back", use_container_width=True):
+            if st.button("Back", use_container_width=True):
                 st.session_state.page = 'home'
                 st.rerun()
     
     with col2:
         st.info("""
-        **Default Credentials:**
+        Default Credentials:
         
-        **Password:** `admin123`
+        Password: admin123
         
-        ⚠️ Change this in production!
-        
-        Edit this line:
-        ```
-        if password == "admin123":
-        ```
+        Change this in production!
         """)
 
-# ============================================================================
-# PAGE: INSTRUCTOR DASHBOARD
-# ============================================================================
-
 def dashboard_page():
-    """Instructor dashboard with analytics"""
     if not st.session_state.instructor_authenticated:
-        st.error("❌ Not authenticated. Please login first.")
+        st.error("Not authenticated. Please login first.")
         st.stop()
     
     st.markdown("""
         <div class="instructor-header">
-            <h1>👨‍🏫 Instructor Dashboard</h1>
+            <h1>Instructor Dashboard</h1>
             <p>Student Performance Analytics</p>
         </div>
     """, unsafe_allow_html=True)
@@ -756,14 +603,13 @@ def dashboard_page():
     all_responses = load_all_responses()
     
     if not all_responses:
-        st.warning("⚠️ No student data yet.")
-        if st.button("⬅️ Back to Home"):
+        st.warning("No student data yet.")
+        if st.button("Back to Home"):
             st.session_state.instructor_authenticated = False
             st.session_state.page = 'home'
             st.rerun()
         return
     
-    # Calculate stats
     scores = []
     topics = defaultdict(lambda: {'correct': 0, 'total': 0})
     students = []
@@ -780,7 +626,7 @@ def dashboard_page():
             'Phone': resp.get('phone', 'N/A'),
             'Score': f"{score}/{len(mcq_data)}",
             'Percentage': f"{pct:.1f}%",
-            'Status': 'PASSED ✅' if score >= 10 else 'FAILED ❌'
+            'Status': 'PASSED' if score >= 10 else 'FAILED'
         })
         
         for q_num, ans in responses.items():
@@ -790,8 +636,7 @@ def dashboard_page():
             if ans == mcq_data[q_num]['correct']:
                 topics[topic]['correct'] += 1
     
-    # Summary
-    st.subheader("📊 Summary")
+    st.subheader("Summary")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Students", len(all_responses))
@@ -807,15 +652,13 @@ def dashboard_page():
     
     st.write("---")
     
-    # Score distribution
-    st.subheader("📈 Score Distribution")
+    st.subheader("Score Distribution")
     score_df = pd.DataFrame({'Score %': scores})
     st.bar_chart(score_df)
     
     st.write("---")
     
-    # Topic performance
-    st.subheader("📚 Topic Performance")
+    st.subheader("Topic Performance")
     topic_list = []
     for topic, stats in sorted(topics.items()):
         if stats['total'] > 0:
@@ -828,31 +671,25 @@ def dashboard_page():
     
     st.write("---")
     
-    # Student table
-    st.subheader("👥 Students")
+    st.subheader("Students")
     st.dataframe(pd.DataFrame(students), use_container_width=True, hide_index=True)
     
     st.write("---")
     
-    # Export
-    st.subheader("💾 Export")
+    st.subheader("Export")
     csv = pd.DataFrame(students).to_csv(index=False)
     st.download_button(
-        "📥 Download CSV",
+        "Download CSV",
         data=csv,
         file_name=f"students_{datetime.now().strftime('%Y%m%d')}.csv",
         mime="text/csv",
         use_container_width=True
     )
     
-    if st.button("⬅️ Back to Home"):
+    if st.button("Back to Home"):
         st.session_state.instructor_authenticated = False
         st.session_state.page = 'home'
         st.rerun()
-
-# ============================================================================
-# MAIN ROUTING
-# ============================================================================
 
 if st.session_state.page == 'home':
     home_page()
@@ -867,6 +704,5 @@ elif st.session_state.page == 'instructor_login':
 elif st.session_state.page == 'dashboard':
     dashboard_page()
 else:
-    # Fallback
     st.session_state.page = 'home'
     st.rerun()
